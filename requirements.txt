@@ -1,0 +1,9 @@
+streamlit>=1.25.0
+plotly>=5.15.0
+numpy>=1.21.0,<2.0.0
+pandas>=1.5.0
+joblib>=1.2.0
+scikit-learn>=1.2.2
+xgboost>=1.7.5
+shap>=0.42.1
+matplotlib>=3.7.1
