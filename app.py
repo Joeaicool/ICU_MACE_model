@@ -104,10 +104,35 @@ if center_col.button("🚀 Calculate MACE Risk Probability", type="primary", use
             s = SCALING_PARAMS[feat]["sd"]
             scaled_inputs[feat] = (raw_inputs[feat] - m) / s
             
-        # 2. 构建输入 DataFrame，顺序严格按照 ALL_FEATURES
-        X_input = pd.DataFrame([[scaled_inputs[f] for f in ALL_FEATURES]], columns=ALL_FEATURES)
+        # 2. 🌟 核心防报错机制：动态获取模型真实需要的特征名与顺序
+        # 从模型内部提取训练时的确切列名
+        try:
+            expected_features = ml_model.feature_names_in_
+        except AttributeError:
+            # 如果模型极老，没有这个属性，就退回到默认顺序
+            expected_features = ALL_FEATURES
+
+        # 3. 智能映射：不论模型里名字有大小写或下划线差异，只要包含关键字就对号入座
+        final_input_dict = {}
+        for expected_f in expected_features:
+            ef_lower = expected_f.lower()
+            if "temp" in ef_lower:
+                final_input_dict[expected_f] = scaled_inputs["Temperature"]
+            elif "ast" in ef_lower:
+                final_input_dict[expected_f] = scaled_inputs["AST"]
+            elif "alp" in ef_lower:
+                final_input_dict[expected_f] = scaled_inputs["ALP"]
+            elif "uric" in ef_lower:
+                final_input_dict[expected_f] = scaled_inputs["Uric Acid"]
+            elif "cr" in ef_lower or "crea" in ef_lower:
+                final_input_dict[expected_f] = scaled_inputs["Cr"]
+            else:
+                final_input_dict[expected_f] = 0.0 # 兜底防止意外崩溃
+                
+        # 4. 构建完美契合模型口味的 DataFrame
+        X_input = pd.DataFrame([final_input_dict])
         
-        # 3. 预测概率
+        # 5. 预测概率
         prob_pos = ml_model.predict_proba(X_input)[0][1] * 100
 
     # =========================
@@ -118,7 +143,6 @@ if center_col.button("🚀 Calculate MACE Risk Probability", type="primary", use
 
     with res_c1:
         st.markdown('#### 🩺 Clinical Interpretation')
-        # 根据实际临床需求，可将阈值调整为最佳截断值（此处暂时用常规的 50% 演示，你可以自己改为 20% 或 30% 等）
         if prob_pos >= 50:
             st.error("### ⚠️ High Risk of Subsequent MACE")
             st.write("The model indicates a **higher likelihood** that the patient will develop Major Adverse Cardiovascular Events.")
@@ -128,8 +152,8 @@ if center_col.button("🚀 Calculate MACE Risk Probability", type="primary", use
         st.info(f"**Calculated Probability of MACE:** **{prob_pos:.2f}%**")
         
         with st.expander("Show Scaled Inputs to Model"):
-            st.write("Machine learning model requires standardized (Z-score) inputs for accurate prediction based on training distribution.")
-            st.json({k: round(v, 4) for k, v in scaled_inputs.items()})
+            st.write("Machine learning model requires standardized (Z-score) inputs for accurate prediction.")
+            st.json({k: round(v, 4) for k, v in final_input_dict.items()})
 
     with res_c2:
         fig_gauge = go.Figure(go.Indicator(
@@ -160,9 +184,9 @@ if center_col.button("🚀 Calculate MACE Risk Probability", type="primary", use
             if isinstance(base_val, (list, np.ndarray)): base_val = base_val[1] if len(base_val)>1 else base_val[0]
 
             sv_in_plot = shap.Explanation(
-                values=sv_values, base_values=float(base_val),
-                data=X_input.iloc[0].values, # 这里传入标准化后的值，这是底层树模型的真实判断依据
-                feature_names=ALL_FEATURES
+                values=sv_values, base_values=float(base_val), 
+                data=X_input.iloc[0].values, 
+                feature_names=list(X_input.columns)  # 严格使用模型自己的特征名绘图
             )
 
             p1, p2 = st.columns([1.5, 1])
@@ -176,7 +200,7 @@ if center_col.button("🚀 Calculate MACE Risk Probability", type="primary", use
             with p2:
                 st.markdown('#### Feature Impact')
                 contrib_df = pd.DataFrame({
-                    "Feature": ALL_FEATURES,
+                    "Feature": list(X_input.columns),
                     "Effect": ["⬆️ Drives towards MACE" if v > 0 else "⬇️ Protects from MACE" for v in sv_values],
                     "Impact (|SHAP|)": np.abs(sv_values)
                 }).sort_values("Impact (|SHAP|)", ascending=False)
@@ -185,3 +209,4 @@ if center_col.button("🚀 Calculate MACE Risk Probability", type="primary", use
         except Exception as e:
             st.warning(f"⚠️ SHAP explanation could not be rendered: {e}")
     st.markdown('</div>', unsafe_allow_html=True)
+
