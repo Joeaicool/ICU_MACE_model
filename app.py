@@ -82,7 +82,10 @@ st.markdown("""
 # =========================
 # 3. 侧边栏：高级模型选择器
 # =========================
-st.sidebar.image("images.jpeg", use_column_width=True) if os.path.exists("images.jpeg") else None
+# 修复 TypeError: 使用标准的 if 语句和新版参数 use_container_width
+if os.path.exists("images.jpeg"):
+    st.sidebar.image("images.jpeg", use_container_width=True)
+
 st.sidebar.markdown("## ⚙️ Model Selection")
 st.sidebar.markdown("Select the AI architecture based on clinical needs:")
 
@@ -124,9 +127,9 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 插入横幅图片 (适配 JPEG)
+# 插入横幅图片 (修复 TypeError)
 if os.path.exists("images.jpeg"):
-    st.image("images.jpeg", use_column_width=True)
+    st.image("images.jpeg", use_container_width=True)
 
 # =========================
 # 5. 数据与模型加载
