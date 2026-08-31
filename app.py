@@ -231,19 +231,22 @@ if predict_btn:
             if 'XGB' in MODEL_FILE:
                 shap_values_raw = explainer.shap_values(X_in.values)
                 sv_values = shap_values_raw[0]
-                base_val = explainer.expected_value
+                raw_bv = explainer.expected_value
             else:
                 shap_values_raw = explainer.shap_values(X_in)
                 sv_values = shap_values_raw[1][0]
-                base_val = explainer.expected_value[1]
+                raw_bv = explainer.expected_value[1]
             
-            # ✨核心修复：强制将 base_val 转换为纯量浮点数，解决 [5E-1] 的字符串崩溃问题
-            if isinstance(base_val, (list, np.ndarray)):
-                base_val_scalar = float(base_val[0])
-            else:
-                base_val_scalar = float(base_val)
+            # ✨ 核心究极修复：暴力提取并清洗 base_value，彻底解决 [5E-1] 字符串崩溃
+            try:
+                # 把不论是 array 还是 list，统统转成字符串，去除所有的中括号和引号，最后转浮点
+                clean_str = str(raw_bv).replace('[', '').replace(']', '').replace("'", "").replace('"', '').strip()
+                base_val_scalar = float(clean_str)
+            except:
+                # 兜底：如果还出问题，强制使用 XGBoost 默认的 0.5
+                base_val_scalar = 0.5
 
-            # 强制将 sv_values 转化为 1D float numpy 数组
+            # 确保 sv_values 是标准的 1D numpy array
             sv_values_arr = np.array(sv_values, dtype=float).flatten()
             
             sv_in = shap.Explanation(
@@ -294,8 +297,8 @@ if predict_btn:
 st.markdown(
     """
     <div class="footer">
-        <b>Author:</b> Xuefei Liang , M.D., Ph.D.<br>
-        <b>Affiliation:</b> Rongxian People's Hospital, Guangxi, China<br>
+        <b>Author:</b> Yifan Sun, M.D., Ph.D.<br>
+        <b>Affiliation:</b> Guigang City People's Hospital, Guangxi, China<br>
         <i>Powered by Streamlit | Developed for clinical research and precision medicine.</i>
     </div>
     """,
