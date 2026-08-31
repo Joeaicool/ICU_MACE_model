@@ -133,6 +133,7 @@ except Exception as e:
     st.error(f"⚠️ Error loading model. Please ensure `{MODEL_FILE}` is uploaded to the repository. \nDetails: {e}")
     st.stop()
 
+# 智能提取特征
 try:
     if hasattr(model, 'feature_names_in_'):
         FEATURES = list(model.feature_names_in_)
@@ -220,14 +221,25 @@ if predict_btn:
     st.markdown('</div>', unsafe_allow_html=True)
 
     # =========================
-    # 8. SHAP 机器学习可解释性
+    # 8. SHAP 机器学习可解释性 (双重防崩溃保护)
     # =========================
     st.markdown('<div class="card"><div class="card-title">🔍 Step 3: AI Explainability (SHAP Analysis)</div>', unsafe_allow_html=True)
     st.write("The plots below unpack the 'black box' of the AI, showing exactly how each biomarker pushes the patient's risk higher (Red) or lower (Blue) compared to the baseline.")
 
-    try:
-        with st.spinner('Calculating SHAP values for personalized explainability...'):
+    with st.spinner('Calculating SHAP values for personalized explainability...'):
+        sv_values_arr = None
+        base_val_scalar = None
+        
+        try:
+            # 【防护措施 1】: 强制注入干净的 base_score，防止 XGBoost 生成带括号的字符串
+            if 'XGB' in MODEL_FILE:
+                try:
+                    model.get_booster().set_param({'base_score': 0.5})
+                except:
+                    pass
+                    
             explainer = shap.TreeExplainer(model)
+            
             if 'XGB' in MODEL_FILE:
                 shap_values_raw = explainer.shap_values(X_in.values)
                 sv_values = shap_values_raw[0]
@@ -236,19 +248,33 @@ if predict_btn:
                 shap_values_raw = explainer.shap_values(X_in)
                 sv_values = shap_values_raw[1][0]
                 raw_bv = explainer.expected_value[1]
-            
-            # ✨ 核心究极修复：暴力提取并清洗 base_value，彻底解决 [5E-1] 字符串崩溃
-            try:
-                # 把不论是 array 还是 list，统统转成字符串，去除所有的中括号和引号，最后转浮点
-                clean_str = str(raw_bv).replace('[', '').replace(']', '').replace("'", "").replace('"', '').strip()
-                base_val_scalar = float(clean_str)
-            except:
-                # 兜底：如果还出问题，强制使用 XGBoost 默认的 0.5
-                base_val_scalar = 0.5
-
-            # 确保 sv_values 是标准的 1D numpy array
+                
+            clean_str = str(raw_bv).replace('[', '').replace(']', '').replace("'", "").replace('"', '').strip()
+            base_val_scalar = float(clean_str)
             sv_values_arr = np.array(sv_values, dtype=float).flatten()
             
+        except Exception as e_tree:
+            # 【防护措施 2】: 终极防线！如果底层的树解释器还是因为版本问题崩溃，直接启用核解释器（黑盒模型）
+            st.toast("Activating Black-box Explainer Fallback...")
+            
+            # 创建一个全 0 的基准患者数据（Baseline）
+            bg_data = np.zeros((1, len(FEATURES)))
+            
+            def model_predict_fn(x):
+                # 适配黑盒的预测接口
+                if 'XGB' in MODEL_FILE:
+                    return model.predict_proba(x)[:, 1]
+                else:
+                    return model.predict_proba(pd.DataFrame(x, columns=FEATURES))[:, 1]
+            
+            bb_explainer = shap.KernelExplainer(model_predict_fn, bg_data)
+            shap_values_raw = bb_explainer.shap_values(X_in.values)
+            
+            sv_values_arr = np.array(shap_values_raw[0], dtype=float).flatten()
+            base_val_scalar = float(bb_explainer.expected_value)
+
+        # 无论用哪种解释器成功，都在此处统一画图
+        if sv_values_arr is not None:
             sv_in = shap.Explanation(
                 values=sv_values_arr, 
                 base_values=base_val_scalar, 
@@ -286,8 +312,8 @@ if predict_btn:
                     use_container_width=True,
                     hide_index=True
                 )
-    except Exception as e:
-        st.warning(f"⚠️ SHAP calculation note: {e}")
+        else:
+            st.error("Failed to calculate SHAP values due to model serialization compatibility.")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
