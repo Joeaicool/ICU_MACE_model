@@ -121,7 +121,7 @@ if os.path.exists("images.jpeg"):
     st.image("images.jpeg", use_container_width=True)
 
 # =========================
-# 5. 模型加载与特征动态提取 (彻底摆脱 Excel 数据依赖)
+# 5. 模型加载与特征动态提取
 # =========================
 @st.cache_resource
 def load_model(file_path):
@@ -133,14 +133,12 @@ except Exception as e:
     st.error(f"⚠️ Error loading model. Please ensure `{MODEL_FILE}` is uploaded to the repository. \nDetails: {e}")
     st.stop()
 
-# 智能提取特征名：直接从模型内部读取它所需要的变量名
 try:
     if hasattr(model, 'feature_names_in_'):
         FEATURES = list(model.feature_names_in_)
     elif hasattr(model, 'get_booster'):
         FEATURES = model.get_booster().feature_names
     else:
-        # 如果模型极为特殊，提供您的默认特征备用方案
         FEATURES = ['Temperature', 'AST', 'ALT', 'Uric Acid', 'Cr', 'ALP']
 except:
     FEATURES = ['Temperature', 'AST', 'ALT', 'Uric Acid', 'Cr', 'ALP']
@@ -157,7 +155,6 @@ input_vals = []
 for idx, f in enumerate(FEATURES):
     col_to_use = columns[idx % 3]
     with col_to_use:
-        # 由于没有原始数据，默认值为 0.0，允许医生自由输入
         v = st.number_input(f"{f}", value=0.0, format="%.2f", step=1.0)
         input_vals.append(v)
         
@@ -239,8 +236,22 @@ if predict_btn:
                 shap_values_raw = explainer.shap_values(X_in)
                 sv_values = shap_values_raw[1][0]
                 base_val = explainer.expected_value[1]
-                
-            sv_in = shap.Explanation(values=sv_values, base_values=base_val, data=X_in.iloc[0].values, feature_names=FEATURES)
+            
+            # ✨核心修复：强制将 base_val 转换为纯量浮点数，解决 [5E-1] 的字符串崩溃问题
+            if isinstance(base_val, (list, np.ndarray)):
+                base_val_scalar = float(base_val[0])
+            else:
+                base_val_scalar = float(base_val)
+
+            # 强制将 sv_values 转化为 1D float numpy 数组
+            sv_values_arr = np.array(sv_values, dtype=float).flatten()
+            
+            sv_in = shap.Explanation(
+                values=sv_values_arr, 
+                base_values=base_val_scalar, 
+                data=X_in.iloc[0].values.astype(float), 
+                feature_names=FEATURES
+            )
 
             p1, p2 = st.columns(2)
 
@@ -253,14 +264,14 @@ if predict_btn:
 
             with p2:
                 st.markdown("**Feature Contribution Ranking**")
-                abs_sv = np.abs(sv_values)
+                abs_sv = np.abs(sv_values_arr)
                 total = abs_sv.sum() if abs_sv.sum() != 0 else 1.0
                 pct = (abs_sv / total) * 100
 
                 contrib_df = pd.DataFrame({
                     "Biomarker": FEATURES,
                     "Patient Value": X_in.iloc[0].values,
-                    "Effect": ["⬆️ Increased Risk" if v > 0 else "⬇️ Decreased Risk" for v in sv_values],
+                    "Effect": ["⬆️ Increased Risk" if v > 0 else "⬇️ Decreased Risk" for v in sv_values_arr],
                     "Contribution Impact": pct
                 }).sort_values("Contribution Impact", ascending=False)
 
