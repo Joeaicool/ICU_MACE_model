@@ -1,212 +1,319 @@
-import streamlit as st
+import os
 import joblib
 import numpy as np
 import pandas as pd
 import shap
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-import os
+import streamlit as st
 
 # =========================
-# 1. 页面配置与高级医学 CSS
+# 1. 页面配置 (Page Config)
 # =========================
-st.set_page_config(page_title="Sepsis MACE Predictor", page_icon="🫀", layout="wide")
+st.set_page_config(
+    page_title="AI Clinical Risk Predictor | Precision Medicine",
+    page_icon="🧬",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
+# =========================
+# 2. 高级医学期刊风格 CSS
+# =========================
 st.markdown("""
 <style>
+    /* 全局背景色 */
     .main { background-color: #F8F9FA; }
-    .title-box { background: linear-gradient(135deg, #0A2540 0%, #B22222 100%); padding: 2rem; border-radius: 12px; color: white; text-align: center; margin-bottom: 1.5rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    .title-box h1 { margin: 0; font-size: 2.2rem; font-weight: 700; }
+    
+    /* 顶部标题卡片 */
+    .title-box {
+        background: linear-gradient(135deg, #0A2540 0%, #1750A1 100%);
+        padding: 2rem;
+        border-radius: 12px;
+        color: white;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 1.5rem;
+        text-align: center;
+    }
+    .title-box h1 { margin: 0; font-size: 2.2rem; font-weight: 700; font-family: 'Helvetica Neue', sans-serif;}
     .title-box p { margin-top: 10px; font-size: 1.1rem; opacity: 0.9; }
-    .card { background: white; padding: 1.5rem; border-radius: 12px; border: 1px solid #E2E8F0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 1.5rem; }
-    .card-title { color: #0A2540; font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem; border-bottom: 2px solid #F1F5F9; padding-bottom: 0.5rem; }
+    
+    /* 临床说明卡片 */
+    .clinical-note {
+        background-color: #EBF4FA;
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        border-left: 6px solid #1750A1;
+        margin-bottom: 2rem;
+        color: #0A2540;
+        font-size: 1rem;
+    }
+    
+    /* 内容卡片 */
+    .card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 12px;
+        border: 1px solid #E2E8F0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        margin-bottom: 1.5rem;
+    }
+    .card-title {
+        color: #0A2540;
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        border-bottom: 2px solid #F1F5F9;
+        padding-bottom: 0.5rem;
+    }
+    
+    /* 页脚 */
+    .footer {
+        margin-top: 3rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid #E2E8F0;
+        text-align: center;
+        color: #64748B;
+        font-size: 0.9rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div class="title-box">
-    <h1>Machine Learning for Predicting MACE Risk in Sepsis</h1>
-    <p>An Interpretable Clinical Decision-Support Tool based on Routine Biomarkers</p>
-</div>
-""", unsafe_allow_html=True)
-
-# 加载顶部医学横幅图
-try:
-    from PIL import Image
-    if os.path.exists("1.png"):
-        st.image(Image.open("1.png"), use_container_width=True)
-except Exception:
-    pass
-
 # =========================
-# 2. 全局配置与特征定义
+# 3. 侧边栏：高级模型选择器
 # =========================
-ML_MODEL_PATH = "RF_BO_best.pkl"
-ALL_FEATURES = ["Temperature", "AST", "ALP", "Uric Acid", "Cr"]
+st.sidebar.image("images.jpeg", use_column_width=True) if os.path.exists("images.jpeg") else None
+st.sidebar.markdown("## ⚙️ Model Selection")
+st.sidebar.markdown("Select the AI architecture based on clinical needs:")
 
-# ⚠️ 关键步骤：硬编码训练集的 Mean 和 SD 进行手动标准化
-# 依据你的 Baseline_Characteristics 表格总体数据
-SCALING_PARAMS = {
-    "Temperature": {"mean": 37.21, "sd": 1.10},
-    "AST": {"mean": 99.00, "sd": 344.58},
-    "ALP": {"mean": 131.48, "sd": 102.90},
-    "Uric Acid": {"mean": 409.68, "sd": 203.12},
-    "Cr": {"mean": 183.95, "sd": 171.03}
+selected_model_name = st.sidebar.radio(
+    "",
+    ("XGBoost (Genetic Algorithm)", "Random Forest (Bayesian)"),
+    help="XGBoost offers the best overall generalization and sensitivity. Random Forest offers extremely high specificity."
+)
+
+model_file_map = {
+    "XGBoost (Genetic Algorithm)": "XGB_GA.pkl",
+    "Random Forest (Bayesian)": "RF_BO_best.pkl"
 }
+MODEL_FILE = model_file_map[selected_model_name]
+
+st.sidebar.markdown("---")
+st.sidebar.info(f"**Currently Active:**\n\n{selected_model_name}\n\n*File: `{MODEL_FILE}`*")
+
+# =========================
+# 4. 页面头与图片
+# =========================
+st.markdown(
+    """
+    <div class="title-box">
+        <h1>Advanced Machine Learning Model for Clinical Risk Prediction</h1>
+        <p>Explainable Artificial Intelligence (XAI) for Personalized Patient Assessment</p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    """
+    <div class="clinical-note">
+    <b>Objective:</b> This tool leverages advanced machine learning algorithms (XGBoost & Random Forest) to predict individual clinical risk based on routine patient data. <br>
+    <b>Note for Patients & Clinicians:</b> This is a supplementary decision-support tool. Final medical decisions should always be made by a qualified healthcare professional in conjunction with comprehensive clinical evaluations.
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# 插入横幅图片 (适配 JPEG)
+if os.path.exists("images.jpeg"):
+    st.image("images.jpeg", use_column_width=True)
+
+# =========================
+# 5. 数据与模型加载
+# =========================
+DATA_FILE = "Final_Cleaned_Data.xlsx"
 
 @st.cache_resource
-def load_ml_model():
-    try:
-        return joblib.load(ML_MODEL_PATH)
-    except Exception as e:
-        st.error(f"⚠️ Model loading failed. Please ensure '{ML_MODEL_PATH}' is in the same directory. Error: {e}")
-        st.stop()
+def load_model(file_path):
+    return joblib.load(file_path)
+
+@st.cache_data
+def load_data():
+    return pd.read_excel(DATA_FILE)
+
+try:
+    model = load_model(MODEL_FILE)
+    df = load_data()
+except Exception as e:
+    st.error(f"⚠️ Error loading files. Please ensure `{MODEL_FILE}` and `{DATA_FILE}` are in the same directory. \nDetails: {e}")
+    st.stop()
+
+# 动态提取特征 (剔除常见非特征列，自动适应您的真实数据)
+X_f = df.drop(columns=['status', 'ID', 'MACE', 'numb', 'split'], errors='ignore')
+FEATURES = X_f.columns.tolist()
 
 # =========================
-# 3. UI: 临床数据输入区
+# 6. 用户输入面板 (UI设计对医生极其友好)
 # =========================
-st.markdown('<div class="card"><div class="card-title">🩺 Enter Patient Baseline Biomarkers</div>', unsafe_allow_html=True)
+st.markdown('<div class="card"><div class="card-title">📝 Step 1: Patient Biomarker Input</div>', unsafe_allow_html=True)
 
-c1, c2, c3 = st.columns(3)
-with c1:
-    val_temp = st.number_input("Temperature (°C)", min_value=30.0, max_value=45.0, value=37.2, step=0.1)
-    val_ast = st.number_input("AST (U/L)", min_value=0.0, max_value=2000.0, value=99.0, step=1.0)
-with c2:
-    val_alp = st.number_input("ALP (U/L)", min_value=0.0, max_value=1000.0, value=131.5, step=1.0)
-    val_ua = st.number_input("Uric Acid (μmol/L)", min_value=0.0, max_value=1500.0, value=409.7, step=1.0)
-with c3:
-    val_cr = st.number_input("Creatinine (Cr, μmol/L)", min_value=0.0, max_value=2000.0, value=184.0, step=1.0)
-    
+# 使用 3 列布局让界面更紧凑美观
+col1, col2, col3 = st.columns(3)
+columns = [col1, col2, col3]
+
+input_vals = []
+for idx, f in enumerate(FEATURES):
+    # 按列顺序循环放置输入框
+    col_to_use = columns[idx % 3]
+    with col_to_use:
+        if pd.api.types.is_numeric_dtype(X_f[f]):
+            min_val = float(X_f[f].min())
+            max_val = float(X_f[f].max())
+            median_val = float(X_f[f].median())
+            v = st.number_input(
+                f"{f}",
+                min_value=min_val,
+                max_value=max_val,
+                value=median_val,
+                help=f"Dataset Range: {min_val:.2f} - {max_val:.2f}"
+            )
+        else:
+            opts = X_f[f].dropna().unique().tolist()
+            v = st.selectbox(f"{f}", opts)
+        input_vals.append(v)
+        
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 汇总原始输入数据
-raw_inputs = {
-    "Temperature": val_temp,
-    "AST": val_ast,
-    "ALP": val_alp,
-    "Uric Acid": val_ua,
-    "Cr": val_cr
-}
+# 构建输入DataFrame
+X_in = pd.DataFrame([input_vals], columns=FEATURES)
 
 # =========================
-# 4. 推理与预测
+# 7. 预测与可视化 (核心结果区)
 # =========================
 _, center_col, _ = st.columns([1, 2, 1])
-if center_col.button("🚀 Calculate MACE Risk Probability", type="primary", use_container_width=True):
+with center_col:
+    predict_btn = st.button(f"🚀 Run Assessment with {selected_model_name.split(' ')[0]}", type="primary", use_container_width=True)
+
+if predict_btn:
+    st.markdown('<div class="card"><div class="card-title">📊 Step 2: Prediction Results & Interpretation</div>', unsafe_allow_html=True)
     
-    with st.spinner("🤖 Processing data and running AI model..."):
-        ml_model = load_ml_model()
-        
-        # 1. 对输入数据进行与训练集一致的 StandardScaler 变换
-        scaled_inputs = {}
-        for feat in ALL_FEATURES:
-            m = SCALING_PARAMS[feat]["mean"]
-            s = SCALING_PARAMS[feat]["sd"]
-            scaled_inputs[feat] = (raw_inputs[feat] - m) / s
-            
-        # 2. 🌟 核心防报错机制：动态获取模型真实需要的特征名与顺序
-        # 从模型内部提取训练时的确切列名
-        try:
-            expected_features = ml_model.feature_names_in_
-        except AttributeError:
-            # 如果模型极老，没有这个属性，就退回到默认顺序
-            expected_features = ALL_FEATURES
+    # 兼容 XGB 和 RF 的预测方式
+    if 'XGB' in MODEL_FILE:
+        prob_pos = model.predict_proba(X_in.values)[0][1] * 100
+    else:
+        prob_pos = model.predict_proba(X_in)[0][1] * 100
 
-        # 3. 智能映射：不论模型里名字有大小写或下划线差异，只要包含关键字就对号入座
-        final_input_dict = {}
-        for expected_f in expected_features:
-            ef_lower = expected_f.lower()
-            if "temp" in ef_lower:
-                final_input_dict[expected_f] = scaled_inputs["Temperature"]
-            elif "ast" in ef_lower:
-                final_input_dict[expected_f] = scaled_inputs["AST"]
-            elif "alp" in ef_lower:
-                final_input_dict[expected_f] = scaled_inputs["ALP"]
-            elif "uric" in ef_lower:
-                final_input_dict[expected_f] = scaled_inputs["Uric Acid"]
-            elif "cr" in ef_lower or "crea" in ef_lower:
-                final_input_dict[expected_f] = scaled_inputs["Cr"]
-            else:
-                final_input_dict[expected_f] = 0.0 # 兜底防止意外崩溃
-                
-        # 4. 构建完美契合模型口味的 DataFrame
-        X_input = pd.DataFrame([final_input_dict])
-        
-        # 5. 预测概率
-        prob_pos = ml_model.predict_proba(X_input)[0][1] * 100
-
-    # =========================
-    # 5. 结果展示区
-    # =========================
-    st.markdown('<div class="card"><div class="card-title">📊 Step 2: Diagnostic Results</div>', unsafe_allow_html=True)
     res_c1, res_c2 = st.columns([1.2, 1])
 
     with res_c1:
-        st.markdown('#### 🩺 Clinical Interpretation')
+        st.markdown('#### 🩺 Clinical Conclusion')
         if prob_pos >= 50:
-            st.error("### ⚠️ High Risk of Subsequent MACE")
-            st.write("The model indicates a **higher likelihood** that the patient will develop Major Adverse Cardiovascular Events.")
+            st.error("### ⚠️ High Risk Detected")
+            st.write(f"The model indicates a **higher likelihood** of MACE or positive clinical progression.")
         else:
-            st.success("### ✅ Low Risk of MACE")
-            st.write("The model indicates a **lower likelihood** of short-term cardiovascular events.")
-        st.info(f"**Calculated Probability of MACE:** **{prob_pos:.2f}%**")
-        
-        with st.expander("Show Scaled Inputs to Model"):
-            st.write("Machine learning model requires standardized (Z-score) inputs for accurate prediction.")
-            st.json({k: round(v, 4) for k, v in final_input_dict.items()})
+            st.success("### ✅ Low Risk Detected")
+            st.write(f"The model indicates a **lower likelihood** of MACE or positive clinical progression.")
+            
+        st.info(f"**Calculated Risk Probability:** **{prob_pos:.2f}%**")
+        st.write("*Interpretation: A probability closer to 100% indicates higher risk. Please review the SHAP explainability plots below to understand which specific patient features are driving this risk profile.*")
 
     with res_c2:
+        # Plotly 风险表盘
         fig_gauge = go.Figure(go.Indicator(
-            mode="gauge+number", value=prob_pos, number={"suffix": "%", "font": {"size": 40}},
-            title={"text": "MACE Risk Probability", "font": {"size": 18}},
-            gauge={"axis": {"range": [0, 100]}, "bar": {"color": "#B22222"},
-                   "steps": [{"range": [0, 50], "color": "rgba(40, 167, 69, 0.2)"},
-                             {"range": [50, 100], "color": "rgba(220, 53, 69, 0.2)"}]}
+            mode="gauge+number",
+            value=prob_pos,
+            number={"suffix": "%", "font": {"size": 40, "color": "#0A2540"}},
+            gauge={
+                "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "darkblue"},
+                "bar": {"color": "#1750A1"},
+                "bgcolor": "white",
+                "borderwidth": 2,
+                "bordercolor": "gray",
+                "steps": [
+                    {"range": [0, 30], "color": "rgba(40, 167, 69, 0.2)"},  # 绿
+                    {"range": [30, 70], "color": "rgba(255, 193, 7, 0.2)"}, # 黄
+                    {"range": [70, 100], "color": "rgba(220, 53, 69, 0.2)"},# 红
+                ],
+                "threshold": {
+                    "line": {"color": "red", "width": 4},
+                    "thickness": 0.75,
+                    "value": prob_pos
+                }
+            }
         ))
-        fig_gauge.update_layout(height=300, margin=dict(l=20, r=20, t=40, b=20))
+        fig_gauge.update_layout(height=280, margin=dict(l=20, r=20, t=30, b=20))
         st.plotly_chart(fig_gauge, use_container_width=True)
+
     st.markdown('</div>', unsafe_allow_html=True)
 
     # =========================
-    # 6. SHAP 解释区
+    # 8. SHAP 机器学习可解释性 (XAI)
     # =========================
-    st.markdown('<div class="card"><div class="card-title">🔍 AI Explainability (SHAP Waterfall)</div>', unsafe_allow_html=True)
-    with st.spinner('Calculating SHAP values for personalized explanation...'):
-        try:
-            explainer = shap.TreeExplainer(ml_model)
-            shap_values_raw = explainer.shap_values(X_input)
-            
-            if isinstance(shap_values_raw, list): sv_values = shap_values_raw[1][0]
-            elif len(shap_values_raw.shape) == 3: sv_values = shap_values_raw[0, :, 1]
-            else: sv_values = shap_values_raw[0]
+    st.markdown('<div class="card"><div class="card-title">🔍 Step 3: AI Explainability (SHAP Analysis)</div>', unsafe_allow_html=True)
+    st.write("The plots below unpack the 'black box' of the AI, showing exactly how each biomarker pushes the patient's risk higher (Red) or lower (Blue) compared to the baseline.")
 
-            base_val = explainer.expected_value
-            if isinstance(base_val, (list, np.ndarray)): base_val = base_val[1] if len(base_val)>1 else base_val[0]
+    try:
+        with st.spinner('Calculating SHAP values for personalized explainability...'):
+            # 兼容 RF 和 XGB 的解释器
+            explainer = shap.TreeExplainer(model)
+            if 'XGB' in MODEL_FILE:
+                shap_values_raw = explainer.shap_values(X_in.values)
+                sv_values = shap_values_raw[0]
+                base_val = explainer.expected_value
+            else:
+                shap_values_raw = explainer.shap_values(X_in)
+                sv_values = shap_values_raw[1][0]
+                base_val = explainer.expected_value[1]
+                
+            # 手动构建 Explanation 对象以适配 waterfall 图
+            sv_in = shap.Explanation(values=sv_values, base_values=base_val, data=X_in.iloc[0].values, feature_names=FEATURES)
 
-            sv_in_plot = shap.Explanation(
-                values=sv_values, base_values=float(base_val), 
-                data=X_input.iloc[0].values, 
-                feature_names=list(X_input.columns)  # 严格使用模型自己的特征名绘图
-            )
+            p1, p2 = st.columns(2)
 
-            p1, p2 = st.columns([1.5, 1])
             with p1:
-                fig_wf, ax_wf = plt.subplots(figsize=(8, 5), dpi=150)
-                shap.plots.waterfall(sv_in_plot, max_display=10, show=False)
-                plt.tight_layout()
-                st.pyplot(fig_wf)
+                st.markdown("**SHAP Waterfall Plot**")
+                fig_wf, ax_wf = plt.subplots(figsize=(6, 5), dpi=150)
+                shap.plots.waterfall(sv_in, max_display=10, show=False)
+                st.pyplot(fig_wf, use_container_width=True)
                 plt.close(fig_wf)
 
             with p2:
-                st.markdown('#### Feature Impact')
-                contrib_df = pd.DataFrame({
-                    "Feature": list(X_input.columns),
-                    "Effect": ["⬆️ Drives towards MACE" if v > 0 else "⬇️ Protects from MACE" for v in sv_values],
-                    "Impact (|SHAP|)": np.abs(sv_values)
-                }).sort_values("Impact (|SHAP|)", ascending=False)
-                st.dataframe(contrib_df, use_container_width=True, hide_index=True)
+                st.markdown("**Feature Contribution Ranking**")
+                abs_sv = np.abs(sv_values)
+                total = abs_sv.sum() if abs_sv.sum() != 0 else 1.0
+                pct = (abs_sv / total) * 100
 
-        except Exception as e:
-            st.warning(f"⚠️ SHAP explanation could not be rendered: {e}")
+                contrib_df = pd.DataFrame({
+                    "Biomarker": FEATURES,
+                    "Patient Value": X_in.iloc[0].values,
+                    "Effect": ["⬆️ Increased Risk" if v > 0 else "⬇️ Decreased Risk" for v in sv_values],
+                    "Contribution Impact": pct
+                }).sort_values("Contribution Impact", ascending=False)
+
+                st.dataframe(
+                    contrib_df.style.format({
+                        "Patient Value": "{:.2f}",
+                        "Contribution Impact": "{:.1f}%"
+                    }).background_gradient(subset=['Contribution Impact'], cmap='Blues'),
+                    use_container_width=True,
+                    hide_index=True
+                )
+    except Exception as e:
+        st.warning(f"⚠️ SHAP calculation note: {e}")
+
     st.markdown('</div>', unsafe_allow_html=True)
 
+
+# =========================
+# 9. 专业页脚
+# =========================
+st.markdown(
+    """
+    <div class="footer">
+        <b>Author:</b> Xuefei Liang , M.D., Ph.D.<br>
+        <b>Affiliation:</b> Rongxian People's Hospital, Guangxi, China<br>
+        <i>Powered by Streamlit | Developed for clinical research and precision medicine.</i>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
